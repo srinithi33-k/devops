@@ -1,0 +1,42 @@
+stages:
+  - pull
+  - setup
+  - deploy
+
+variables:
+  SSH_USER: "ubuntu"  # Change to your EC2 instance username
+  SSH_HOST: "ec2-54-251-132-76.ap-southeast-1.compute.amazonaws.com"  # Change to your EC2 instance public DNS
+  GIT_REPO_URL: "https://oauth2:${GITLAB_ACCESS_TOKEN}@gitlab.com/enterprise_projects/sample_project.git"  # Your full GitLab repository URL
+
+
+before_script:
+  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+
+# Stage to pull the latest code
+pull:
+  stage: pull
+  script:
+    - echo "Pulling latest code..."
+    - ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "cd sample_project && git pull ${GIT_REPO_URL} main"
+
+# Stage to set up the environment
+setup:
+  stage: setup
+  script:
+    - echo "Setting up the virtual environment and installing dependencies..."
+    - ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST 'cd sample_project && chmod +x setup_env.sh && ./setup_env.sh'
+
+# Stage to deploy the application
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying application..."
+    - ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST 'cd sample_project && source venv/bin/activate && nohup python3 manage.py runserver 0.0.0.0:8000 &'
+    - sleep 10  # Wait for server to start
+    - ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST 'curl http://localhost:8000/health && exit'
+
+# Optionally add other stages such as test, build, etc.
